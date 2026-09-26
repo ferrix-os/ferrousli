@@ -2,7 +2,7 @@
 # Builds LLVM 23.1.1's C++ runtime against ferrousli: libc++, libc++abi and
 # libunwind, static, for x86-64.
 #
-#     tools/ports/libcxx/build.sh            # from ferrousli/
+#     tools/ports/libcxx/build.sh            # from userland/ferrousli/
 #
 # Installs, under $FERRIX_PORTS (see ../common.sh):
 #   x86_64/include/c++/v1/      libc++'s headers
