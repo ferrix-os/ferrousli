@@ -1,0 +1,67 @@
+name: CI
+
+# This repository is a component of Ferrix (https://github.com/ferrix-os/ferrix): xtask builds
+# and gates it from a checkout of Ferrix's main with this repository at
+# src/user/system/linux/ferrousli (components.toml). So CI checks out exactly that.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  authors:
+    name: One author per commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v6
+        with:
+          repository: ferrix-os/ferrix
+          path: .ferrix
+          sparse-checkout: tools/common/check
+      - name: No commit carries a Co-authored-by trailer
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            BASE=${{ github.event.pull_request.base.sha }}; HEAD=${{ github.event.pull_request.head.sha }}
+          else
+            BASE=${{ github.event.before }}; HEAD=${{ github.sha }}
+          fi
+          case "$BASE" in 0000000000000000000000000000000000000000|"") BASE=$(git rev-list --max-parents=0 HEAD | tail -1) ;; esac
+          python3 .ferrix/tools/common/check/check-commit-authors.py "$BASE" "$HEAD"
+
+  check:
+    name: cargo xtask check-ferrousli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: ferrix-os/ferrix
+      - uses: actions/checkout@v6
+        with:
+          path: src/user/system/linux/ferrousli
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt, clippy
+          targets: x86_64-unknown-none, aarch64-unknown-none-softfloat, armv7a-none-eabi, x86_64-unknown-uefi, aarch64-unknown-uefi, armv7-unknown-linux-musleabi
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src/user/system/linux/ferrousli -> target
+      # The math tests judge every function against libc-test's tables
+      # (src/math/mtest.rs); the commit Ferrix's CI gates against.
+      - name: Fetch libc-test's tables
+        env:
+          LIBC_TEST_COMMIT: 7b95dfa5f5d5ca4d949221e0228ccc290bacc14e
+        run: |
+          git clone --quiet https://repo.or.cz/libc-test.git "$RUNNER_TEMP/libc-test"
+          git -C "$RUNNER_TEMP/libc-test" checkout --quiet --detach "$LIBC_TEST_COMMIT"
+          echo "FERROUSLI_LIBC_TEST=$RUNNER_TEMP/libc-test" >> "$GITHUB_ENV"
+      - name: cargo xtask check-ferrousli
+        run: cargo xtask check-ferrousli

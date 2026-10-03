@@ -1,5 +1,7 @@
 # Ferrousli
 
+> A component of [Ferrix](https://github.com/ferrix-os/ferrix), checked out at `src/user/system/linux/ferrousli` (its `components.toml`); build and test it from there with `cargo xtask`. Ferrix's [conventions](https://github.com/ferrix-os/ferrix/blob/main/docs/CONVENTIONS.md) apply, including one author per commit.
+
 A C library for Linux, written in Rust. The name is *ferrous* and *musl*.
 
 The model is musl: small, correct, and built to be linked statically. The
@@ -116,7 +118,7 @@ it weak in assembly, and which stable Rust cannot express for a
 
 These are the utilities that replace busybox's, and since 2026-09-18 they are
 what `/bin` holds: every name uutils provides is uutils', `/bin/sh` is zinc,
-and busybox keeps the rest. [docs/UUTILS.md](../../../../../docs/UUTILS.md) is the plan, including §6a on
+and busybox keeps the rest. [docs/UUTILS.md](https://github.com/ferrix-os/ferrix/blob/main/docs/UUTILS.md) is the plan, including §6a on
 the two projects of the family that do not build for this target.
 
 ## busybox
