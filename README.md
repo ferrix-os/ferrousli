@@ -6,12 +6,12 @@ A C library for Linux, written in Rust. The name is *ferrous* and *musl*.
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/screenshots/foot.png" alt="The foot terminal on Ferrix, running ferrofetch in zinc"></td>
+    <td width="33%"><img src="docs/screenshots/curl.png" alt="curl on Ferrix, over HTTPS with Mbed TLS"></td>
     <td width="33%"><img src="docs/screenshots/btop.png" alt="btop monitoring a Ferrix system with Chrome running"></td>
     <td width="33%"><img src="docs/screenshots/vkgears.png" alt="vkgears drawing Vulkan gears through Venus"></td>
   </tr>
   <tr>
-    <td>foot, the Wayland terminal, built against ferrousli.</td>
+    <td>curl, built against ferrousli, over HTTPS with Mbed TLS.</td>
     <td>btop, built against ferrousli, watching Chrome and Ferrix's drivers.</td>
     <td>vkgears, drawing through Vulkan and Venus.</td>
   </tr>
