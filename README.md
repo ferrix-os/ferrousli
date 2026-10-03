@@ -4,6 +4,22 @@
 
 A C library for Linux, written in Rust. The name is *ferrous* and *musl*.
 
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/foot.png" alt="The foot terminal on Ferrix, running ferrofetch in zinc"></td>
+    <td width="33%"><img src="docs/screenshots/btop.png" alt="btop monitoring a Ferrix system with Chrome running"></td>
+    <td width="33%"><img src="docs/screenshots/vkgears.png" alt="vkgears drawing Vulkan gears through Venus"></td>
+  </tr>
+  <tr>
+    <td>foot, the Wayland terminal, built against ferrousli.</td>
+    <td>btop, built against ferrousli, watching Chrome and Ferrix's drivers.</td>
+    <td>vkgears, drawing through Vulkan and Venus.</td>
+  </tr>
+</table>
+
+*The programs in [`apps/`](apps/), on Ferrix (x86-64 under KVM), 2026-10-03.
+[How the screenshots were made](https://github.com/ferrix-os/ferrix/blob/main/docs/brand/screenshots/CAPTIONS.md).*
+
 The model is musl: small, correct, and built to be linked statically. The
 destination is further. A program built against glibc should one day be able to
 load this library in glibc's place. That means matching glibc's exported
