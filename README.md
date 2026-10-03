@@ -17,7 +17,7 @@ A C library for Linux, written in Rust. The name is *ferrous* and *musl*.
   </tr>
 </table>
 
-*The programs in [`apps/`](apps/), on Ferrix (x86-64 under KVM), 2026-10-03.
+*Programs built against ferrousli, which live in [ferrix-os/apps](https://github.com/ferrix-os/apps), on Ferrix (x86-64 under KVM), 2026-10-03.
 [How the screenshots were made](https://github.com/ferrix-os/ferrix/blob/main/docs/brand/screenshots/CAPTIONS.md).*
 
 The model is musl: small, correct, and built to be linked statically. The
