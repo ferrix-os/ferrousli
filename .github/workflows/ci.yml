@@ -48,6 +48,9 @@ jobs:
         with:
           components: rustfmt, clippy
           targets: x86_64-unknown-none, aarch64-unknown-none-softfloat, armv7a-none-eabi, x86_64-unknown-uefi, aarch64-unknown-uefi, armv7-unknown-linux-musleabi
+      # xtask's check refuses to run with Ferrix's commit hooks unarmed.
+      - name: Arm the commit hooks
+        run: git config core.hooksPath .githooks
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
