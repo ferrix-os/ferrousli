@@ -169,8 +169,12 @@ if [ "$status" -ne 0 ]; then
     exit 1
 fi
 
+# Where build.sh installs it, and where xtask looks (`uutils::program`): a
+# copy left at x86_64/coreutils was never found, so every boot rebuilt it and
+# still carried the one in bin/ from before.
 step "install"
-mkdir -p "$out/x86_64"
-install -m 755 "$build/target/$TARGET/release/coreutils" "$out/x86_64/coreutils"
-ls -l "$out/x86_64/coreutils"
-echo "$out/x86_64/coreutils"
+mkdir -p "$out/x86_64/bin"
+install -m 755 "$build/target/$TARGET/release/coreutils" "$out/x86_64/bin/coreutils"
+rm -f "$out/x86_64/coreutils"
+ls -l "$out/x86_64/bin/coreutils"
+echo "$out/x86_64/bin/coreutils"
