@@ -12,7 +12,7 @@
 
 use core::ffi::{CStr, c_char, c_int, c_long, c_ulonglong, c_void};
 use core::mem::{offset_of, size_of};
-use core::ptr::{null, null_mut, with_exposed_provenance};
+use core::ptr::{null, null_mut, with_exposed_provenance, with_exposed_provenance_mut};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::thread::Phdr;
@@ -425,24 +425,162 @@ fn fail() {
     FAILED.store(true, Ordering::Relaxed);
 }
 
+/// The segment naming an object's unwind table: its `.eh_frame_hdr`.
+const PT_GNU_EH_FRAME: u32 = 0x6474_e550;
+
+/// `struct dl_find_object`, as `include/dlfcn.h` declares it for the 64-bit
+/// targets, and as glibc 2.35 and later lay it out there: 96 bytes, with no
+/// `dlfo_eh_dbase` and no `dlfo_eh_count`, which only i386 and 32-bit Arm
+/// have. libgcc's unwinder is compiled against this layout and passes one on
+/// its stack.
+#[cfg(target_pointer_width = "64")]
+#[repr(C)]
+#[derive(Debug)]
+pub struct DlFindObject {
+    /// Flags: none are defined, and 0 is written.
+    pub dlfo_flags: c_ulonglong,
+    /// The lowest address any loadable segment of the object is mapped at.
+    pub dlfo_map_start: *mut c_void,
+    /// One past the highest.
+    pub dlfo_map_end: *mut c_void,
+    /// The object's `struct link_map`. Null here: the unwinder does not read
+    /// it, and `dladdr1` and `dlinfo` are the ways to one.
+    pub dlfo_link_map: *mut c_void,
+    /// The object's `PT_GNU_EH_FRAME` segment, or null when it has none.
+    pub dlfo_eh_frame: *mut c_void,
+    /// Kept for later fields, and left as the caller had it.
+    pub dlfo_reserved: [c_ulonglong; 7],
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<DlFindObject>() == 96);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(offset_of!(DlFindObject, dlfo_map_start) == 8);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(offset_of!(DlFindObject, dlfo_eh_frame) == 32);
+
+/// What [`covering`] looks for and what it found.
+#[cfg(target_pointer_width = "64")]
+struct Search {
+    /// The address asked about.
+    address: usize,
+    /// The bounds of the object that holds it, and its unwind table.
+    start: usize,
+    end: usize,
+    eh_frame: usize,
+}
+
+/// A [`dl_iterate_phdr`] callback: when a loadable segment of this object
+/// covers the address in the [`Search`] at `data`, write the object's bounds
+/// and its unwind table there and stop the walk with 1.
+///
+/// # Safety
+///
+/// `info` must describe a loaded object, as `dl_iterate_phdr` passes it, and
+/// `data` must point to a [`Search`].
+#[cfg(target_pointer_width = "64")]
+unsafe extern "C" fn covering(info: *mut DlPhdrInfo, _size: usize, data: *mut c_void) -> c_int {
+    // SAFETY: the caller vouches for `data`, which nothing else holds while
+    // the walk runs.
+    let search = unsafe { &mut *data.cast::<Search>() };
+    // SAFETY: the caller vouches for `info`.
+    let info = unsafe { &*info };
+    let (bias, phdr, phnum, address) = (
+        info.dlpi_addr,
+        info.dlpi_phdr.expose_provenance(),
+        usize::from(info.dlpi_phnum),
+        search.address,
+    );
+    let (mut low, mut high, mut eh_frame, mut covers) = (usize::MAX, 0_usize, 0_usize, false);
+    let mut i = 0;
+    while i < phnum {
+        // SAFETY: the object has `phnum` headers mapped at `phdr`.
+        let header = unsafe { header(phdr, i) };
+        let start = bias.wrapping_add(header.p_vaddr as usize);
+        let end = start.wrapping_add(header.p_memsz as usize);
+        if header.p_type == PT_LOAD {
+            if start < low {
+                low = start;
+            }
+            if end > high {
+                high = end;
+            }
+            if address >= start && address < end {
+                covers = true;
+            }
+        } else if header.p_type == PT_GNU_EH_FRAME {
+            eh_frame = start;
+        }
+        i += 1;
+    }
+    if !covers {
+        return 0;
+    }
+    search.start = low;
+    search.end = high;
+    search.eh_frame = eh_frame;
+    1
+}
+
 /// Describes the loaded object holding `address` for an unwinder, as glibc
-/// 2.35 and later do. Always answers "not found", and returns -1.
+/// 2.35 and later do: 0 with `*result` filled, or -1 when no loaded object
+/// holds the address.
 ///
-/// The caller is `_Unwind_Find_FDE` in libgcc, which calls this first and
-/// falls back to [`dl_iterate_phdr`] — which this library does implement, and
-/// which finds the program's unwind tables — when it is told nothing. So the
-/// answer here is not a refusal to unwind; it only costs the fast path.
+/// The caller is `_Unwind_Find_FDE` in libgcc, and since GCC 12 this is the
+/// only question it asks where the C library declares the function: told -1
+/// it gives up rather than walk [`dl_iterate_phdr`] itself, the exception
+/// finds no handler, and the program aborts. Until 2026-10-11 this answered
+/// -1 always, taking the walk for a fallback, and so no Rust program built for
+/// glibc could catch a panic on `ld-ferrousli`: `cargo test` ended at the
+/// first failing test with `SIGABRT`, and rust-analyzer, which cancels a query
+/// by unwinding, ended with no message at its second request.
 ///
-/// It is written this way on purpose. Filling `*result` needs glibc's `struct
-/// dl_find_object`, and there is no header in `include/` to take that layout
-/// from: musl has no such structure, and glibc's header is LGPL and must not
-/// be copied. Not touching the structure at all needs no layout. `docs` has
-/// the row for doing this properly, which wants the layout written down from
-/// the ABI first.
+/// The answer is found by the walk the unwinder used to make: the object with
+/// a loadable segment over the address, its lowest and highest mapped
+/// addresses, and its `PT_GNU_EH_FRAME` segment. The link map is left null.
+///
+/// On the 32-bit targets the structure has a field more (the i386 table's
+/// base, Arm's `PT_ARM_EXIDX` count) and Arm's unwinder asks
+/// `__gnu_Unwind_Find_exidx` instead; there this still answers -1.
+///
+/// # Safety
+///
+/// `result` must be valid to write a `struct dl_find_object` to.
+#[cfg(target_pointer_width = "64")]
+#[cfg_attr(not(test), unsafe(no_mangle))]
+pub unsafe extern "C" fn _dl_find_object(address: *mut c_void, result: *mut DlFindObject) -> c_int {
+    if result.is_null() {
+        return -1;
+    }
+    let mut search = Search {
+        address: address.expose_provenance(),
+        start: 0,
+        end: 0,
+        eh_frame: 0,
+    };
+    // SAFETY: `covering` is given what `dl_iterate_phdr` passes a callback,
+    // and `search` lives across the walk.
+    let found = unsafe { dl_iterate_phdr(Some(covering), (&raw mut search).cast()) };
+    if found != 1 {
+        return -1;
+    }
+    // SAFETY: the caller vouches for `result`. Each field is then written in
+    // place, so the reserved words stay as they were.
+    let result = unsafe { &mut *result };
+    result.dlfo_flags = 0;
+    result.dlfo_map_start = with_exposed_provenance_mut(search.start);
+    result.dlfo_map_end = with_exposed_provenance_mut(search.end);
+    result.dlfo_link_map = null_mut();
+    result.dlfo_eh_frame = with_exposed_provenance_mut(search.eh_frame);
+    0
+}
+
+/// As above, for the 32-bit targets: always -1 (see the 64-bit one).
 ///
 /// # Safety
 ///
 /// None: neither pointer is read or written.
+#[cfg(target_pointer_width = "32")]
 #[cfg_attr(not(test), unsafe(no_mangle))]
 pub extern "C" fn _dl_find_object(_address: *mut c_void, _result: *mut c_void) -> c_int {
     -1

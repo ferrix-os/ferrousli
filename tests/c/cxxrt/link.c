@@ -57,5 +57,25 @@ int main(void)
 	CHECK(info.dli_fname != 0 && info.dli_fname[0] == 0);
 	CHECK(info.dli_sname == 0 && info.dli_saddr == 0);
 	CHECK(dladdr((void *)16, &info) == 0);
+
+#if __SIZEOF_POINTER__ == 8
+	/* What libgcc's unwinder asks, and since GCC 12 the only thing it
+	 * asks: the object holding an address, and its unwind table. */
+	struct dl_find_object found = {0};
+	uintptr_t code = (uintptr_t)&callback;
+	found.__dlfo_reserved[6] = 0x5a5a;
+	CHECK(_dl_find_object(&callback, &found) == 0);
+	CHECK((uintptr_t)found.dlfo_map_start <= code && code < (uintptr_t)found.dlfo_map_end);
+	CHECK(found.dlfo_flags == 0 && found.dlfo_link_map == 0);
+	CHECK(found.__dlfo_reserved[6] == 0x5a5a);
+	/* The table is `.eh_frame_hdr`, version 1, inside the object, where
+	 * the program was linked with one; a static C program may have none. */
+	if (found.dlfo_eh_frame != 0) {
+		CHECK((uintptr_t)found.dlfo_map_start <= (uintptr_t)found.dlfo_eh_frame
+			&& (uintptr_t)found.dlfo_eh_frame < (uintptr_t)found.dlfo_map_end);
+		CHECK(*(unsigned char *)found.dlfo_eh_frame == 1);
+	}
+	CHECK(_dl_find_object((void *)16, &found) == -1);
+#endif
 	return t_status;
 }
