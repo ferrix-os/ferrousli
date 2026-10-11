@@ -12,7 +12,9 @@
 
 use core::ffi::{CStr, c_char, c_int, c_long, c_ulonglong, c_void};
 use core::mem::{offset_of, size_of};
-use core::ptr::{null, null_mut, with_exposed_provenance, with_exposed_provenance_mut};
+#[cfg(target_pointer_width = "64")]
+use core::ptr::with_exposed_provenance_mut;
+use core::ptr::{null, null_mut, with_exposed_provenance};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::thread::Phdr;
@@ -426,6 +428,7 @@ fn fail() {
 }
 
 /// The segment naming an object's unwind table: its `.eh_frame_hdr`.
+#[cfg(target_pointer_width = "64")]
 const PT_GNU_EH_FRAME: u32 = 0x6474_e550;
 
 /// `struct dl_find_object`, as `include/dlfcn.h` declares it for the 64-bit
