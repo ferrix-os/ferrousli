@@ -169,6 +169,8 @@ pub(crate) const DT_INIT: usize = 12;
 pub(crate) const DT_FINI: usize = 13;
 /// This object's own name.
 pub(crate) const DT_SONAME: usize = 14;
+/// The search path, in the form from before `DT_RUNPATH`.
+pub(crate) const DT_RPATH: usize = 15;
 /// The `REL` relocations.
 pub(crate) const DT_REL: usize = 17;
 /// Their size in bytes.

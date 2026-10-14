@@ -474,8 +474,23 @@ fn glibcs_own_libc_on_the_path_is_passed_over() {
 /// loader expands `$ORIGIN` to where `/proc/self/exe` leads.
 #[test]
 fn origin_in_a_runpath_is_where_the_programs_file_is() {
+    origin_is_where_the_programs_file_is("ld-origin", "-Wl,--enable-new-dtags");
+}
+
+/// The same through `DT_RPATH`, the form a program linked without
+/// `--enable-new-dtags` carries: the Claude desktop app, an Electron
+/// program, names `$ORIGIN` for its `libffmpeg.so` that way, and a loader
+/// that read only `DT_RUNPATH` stopped it with "library not found".
+#[test]
+fn origin_in_an_rpath_is_where_the_programs_file_is() {
+    origin_is_where_the_programs_file_is("ld-origin-rpath", "-Wl,--disable-new-dtags");
+}
+
+/// [`origin_in_a_runpath_is_where_the_programs_file_is`] in `dir`, with the
+/// program linked with `dtags` choosing which tag carries its search path.
+fn origin_is_where_the_programs_file_is(dir: &str, dtags: &str) {
     let loader = loader();
-    let dir = scratch().join("ld-origin");
+    let dir = scratch().join(dir);
     let libraries = dir.join("real/lib");
     let elsewhere = dir.join("elsewhere");
     std::fs::create_dir_all(&libraries).expect("make the library directory");
@@ -498,7 +513,7 @@ fn origin_in_a_runpath_is_where_the_programs_file_is() {
         libraries.to_str().expect("a path"),
         "-lgreet",
         "-Wl,-rpath,$ORIGIN/lib",
-        "-Wl,--enable-new-dtags",
+        dtags,
         &format!("-Wl,--dynamic-linker={}", loader.display()),
         "-Wl,-e,_start",
     ]);

@@ -15,7 +15,7 @@ use core::ffi::c_char;
 use crate::elf::{
     DT_FINI, DT_FINI_ARRAY, DT_FINI_ARRAYSZ, DT_FLAGS, DT_FLAGS_1, DT_GNU_HASH, DT_INIT,
     DT_INIT_ARRAY, DT_INIT_ARRAYSZ, DT_JMPREL, DT_NEEDED, DT_NULL, DT_PLTREL, DT_PLTRELSZ, DT_REL,
-    DT_RELA, DT_RELAENT, DT_RELASZ, DT_RELENT, DT_RELSZ, DT_RUNPATH, DT_SONAME, DT_STRSZ,
+    DT_RELA, DT_RELAENT, DT_RELASZ, DT_RELENT, DT_RELSZ, DT_RPATH, DT_RUNPATH, DT_SONAME, DT_STRSZ,
     DT_STRTAB, DT_SYMENT, DT_SYMTAB, DT_VERDEF, DT_VERDEFNUM, DT_VERNEED, DT_VERNEEDNUM, DT_VERSYM,
     Dyn, Sym, VER_NDX_GLOBAL, VER_NDX_LOCAL, VERSYM_HIDDEN, Verdaux, Verdef, Vernaux, Verneed,
 };
@@ -144,7 +144,14 @@ pub(crate) struct Object {
     pub(crate) tls: Option<Tls>,
     /// Its `DT_SONAME`, as a string table offset, or zero.
     pub(crate) soname: u32,
-    /// Its `DT_RUNPATH`, as a string table offset, or zero.
+    /// Its `DT_RUNPATH`, as a string table offset, or zero; its `DT_RPATH`
+    /// when it has no `DT_RUNPATH`, as glibc reads one.
+    ///
+    /// An object linked without `--enable-new-dtags` carries `DT_RPATH`
+    /// only: Electron's programs do, the Claude desktop app's among them,
+    /// with `$ORIGIN` naming where its `libffmpeg.so` is. The one difference
+    /// glibc keeps -- a program's `DT_RPATH` also serves the libraries it
+    /// loads -- is not followed here.
     pub(crate) runpath: u32,
     /// Its `DT_NEEDED` entries, as string table offsets.
     pub(crate) needed: [u32; MAX_NEEDED],
@@ -276,6 +283,7 @@ impl Object {
             },
             ..Object::EMPTY
         };
+        let mut rpath = 0;
         let mut at = dynamic;
         loop {
             // SAFETY: a dynamic table runs to its `DT_NULL`, and this stops
@@ -311,6 +319,7 @@ impl Object {
                 DT_FINI_ARRAYSZ => object.fini_array.size = value,
                 DT_SONAME => object.soname = value as u32,
                 DT_RUNPATH => object.runpath = value as u32,
+                DT_RPATH => rpath = value as u32,
                 DT_FLAGS => object.bind_now |= value & crate::elf::DF_BIND_NOW != 0,
                 DT_FLAGS_1 => object.bind_now |= value & crate::elf::DF_1_NOW != 0,
                 DT_VERSYM => object.versym = value.wrapping_add(base) as *const u16,
@@ -323,6 +332,10 @@ impl Object {
             // The entry read was not the terminator, so another
             // follows.
             at = at.wrapping_add(1);
+        }
+        // `DT_RUNPATH` wins over `DT_RPATH` when an object has both.
+        if object.runpath == 0 {
+            object.runpath = rpath;
         }
         // The `JMPREL` table's entries are the size the form it is says, and
         // `DT_PLTREL` is the only place that says which form that is.
