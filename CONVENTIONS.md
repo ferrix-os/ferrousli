@@ -61,7 +61,8 @@ way C expects: a return value and `errno`.
   `tests/c_<area>.rs` through `tests/common`. Each is built at `-O0` and `-O2`
   with `-std=c11 -Wall -Werror -fstack-protector-strong` against `include/`.
   It runs in a fresh directory with nothing inherited, and must finish within
-  30 seconds.
+  30 seconds, not counting the time it waits in `sync` or `syncfs`: those
+  wait for the whole host's dirty pages, which the program does not control.
 * `#include "check.h"` provides `CHECK(expr)` and `t_status` for programs that
   should not depend on stdio.
 * libc-test and musl (both MIT, in `~/.local/share/ferrix/ferrousli-ref`) are

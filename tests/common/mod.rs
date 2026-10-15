@@ -48,8 +48,42 @@ pub(crate) const SIGABRT: i32 = 6;
 /// `SIGSEGV`.
 pub(crate) const SIGSEGV: i32 = 11;
 
-/// How long a program may run before the test kills it and fails.
+/// How long a program may run before the test kills it and fails, not
+/// counting the time it waits in `sync` or `syncfs` (see [`in_host_flush`]).
 const TIME_LIMIT: Duration = Duration::from_secs(30);
+
+/// How long a program may wait in `sync` and `syncfs` altogether before the
+/// test kills it anyway. Those calls wait for every dirty page of the host's
+/// file systems, other programs' included: a bare `sync` on a build host
+/// writing at a load of 30 to 40 has taken from 9 seconds to 14 minutes. The
+/// bound is there so that a kernel that never answers still ends the run.
+const HOST_FLUSH_LIMIT: Duration = Duration::from_secs(60 * 60);
+
+/// The host's numbers for `sync` and `syncfs`, from the tables the library's
+/// own are generated from (`tools/gen-abi.py`). A program the harness runs
+/// under an emulator makes the host's call, so these are the host's even
+/// then.
+#[cfg(target_arch = "x86_64")]
+#[path = "../../src/generated/nr_x86_64.rs"]
+#[allow(
+    unreachable_pub,
+    reason = "the library's table, read here for two names"
+)]
+mod host_nr;
+#[cfg(target_arch = "aarch64")]
+#[path = "../../src/generated/nr_aarch64.rs"]
+#[allow(
+    unreachable_pub,
+    reason = "the library's table, read here for two names"
+)]
+mod host_nr;
+#[cfg(target_arch = "arm")]
+#[path = "../../src/generated/nr_arm.rs"]
+#[allow(
+    unreachable_pub,
+    reason = "the library's table, read here for two names"
+)]
+mod host_nr;
 
 /// How a program must end.
 #[derive(Debug, Clone, Copy)]
@@ -310,7 +344,9 @@ struct Finished {
 }
 
 /// Runs `program` in `dir`, feeding it `case.stdin`, and kills it if it
-/// outlives [`TIME_LIMIT`].
+/// outlives [`TIME_LIMIT`]. The time it waits in `sync` or `syncfs` does not
+/// count, up to [`HOST_FLUSH_LIMIT`]: that wait is the host's, not the
+/// program's.
 ///
 /// Output is collected by threads that read until the pipes close. A program
 /// that leaves a child holding them open keeps the test waiting until that
@@ -363,15 +399,27 @@ fn run(program: &Path, case: &Case, dir: &Path, label: &str) -> Finished {
     } else {
         TIME_LIMIT
     };
-    let deadline = Instant::now() + limit;
+    let mut deadline = Instant::now() + limit;
+    let mut flushing = Duration::ZERO;
+    let mut last = Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait().expect("poll the program") {
             break status;
         }
-        if Instant::now() > deadline {
+        let now = Instant::now();
+        if in_host_flush(child.id()) {
+            let waited = now.saturating_duration_since(last);
+            deadline += waited;
+            flushing += waited;
+        }
+        last = now;
+        if now > deadline || flushing > HOST_FLUSH_LIMIT {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("{label}: still running after {limit:?}");
+            panic!(
+                "{label}: still running after {limit:?}, \
+                 not counting {flushing:?} waiting in sync or syncfs"
+            );
         }
         thread::sleep(Duration::from_millis(5));
     };
@@ -389,6 +437,31 @@ fn run(program: &Path, case: &Case, dir: &Path, label: &str) -> Finished {
         status,
         stdout: out_reader.join().unwrap_or_default(),
         stderr,
+    }
+}
+
+/// Whether process `pid` is inside `sync` or `syncfs` now.
+///
+/// The kernel says which call a process is blocked in, by number, at the
+/// start of `/proc/<pid>/syscall`; a running process reads "running". A host
+/// without the file, or without the numbers, reads as not flushing, and the
+/// whole of [`TIME_LIMIT`] applies.
+fn in_host_flush(pid: u32) -> bool {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
+    {
+        let Ok(line) = std::fs::read_to_string(format!("/proc/{pid}/syscall")) else {
+            return false;
+        };
+        let nr = line
+            .split_whitespace()
+            .next()
+            .and_then(|nr| nr.parse::<usize>().ok());
+        nr == Some(host_nr::SYNC) || nr == Some(host_nr::SYNCFS)
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+    {
+        let _ = pid;
+        false
     }
 }
 

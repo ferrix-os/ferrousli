@@ -60,7 +60,10 @@ int main(void)
 	CHECK(statvfs("/proc", &sv) == 0 && sv.f_type == PROC_MAGIC);
 	CHECK(sv.f_namemax == sf.f_namelen && sv.f_flag == sf.f_flags);
 
-	/* sync, syncfs and readahead. */
+	/* sync, syncfs and readahead. sync waits for every file system on the
+	 * host, and syncfs for the one the test runs on, whatever else writes
+	 * to them: the harness does not count that wait against the program's
+	 * time limit. */
 	sync();
 	CHECK(syncfs(fd) == 0);
 	errno = 0;
