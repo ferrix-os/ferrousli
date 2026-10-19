@@ -41,6 +41,11 @@ int dlinfo(void *, int, void *);
  * _dl_find_object answers -1. */
 #define DLFO_STRUCT_HAS_EH_DBASE 0
 #define DLFO_STRUCT_HAS_EH_COUNT 0
+/* The segment dlfo_eh_frame points to: PT_GNU_EH_FRAME, the object's
+ * .eh_frame_hdr. Written as its value so that this header needs no <elf.h>;
+ * libunwind compares it with PT_GNU_EH_FRAME and refuses to build without
+ * it. */
+#define DLFO_EH_SEGMENT_TYPE 0x6474e550
 struct dl_find_object {
 	unsigned long long dlfo_flags;
 	void *dlfo_map_start;

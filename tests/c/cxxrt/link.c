@@ -4,8 +4,16 @@
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#if __SIZEOF_POINTER__ == 8 && !defined(DLFO_EH_SEGMENT_TYPE)
+/* libunwind compares it with PT_GNU_EH_FRAME wherever DLFO_STRUCT_HAS_EH_DBASE
+ * is defined, and <dlfcn.h> alone must define it. */
+#error dlfcn.h declares _dl_find_object but not the segment it finds
+#endif
 #include <elf.h>
 #include <link.h>
+#if __SIZEOF_POINTER__ == 8 && DLFO_EH_SEGMENT_TYPE != PT_GNU_EH_FRAME
+#error _dl_find_object retrieves an unexpected section type
+#endif
 #include <stdint.h>
 
 #include "check.h"
@@ -16,6 +24,7 @@ struct seen {
 	int calls;
 	int code_covered;
 	int tls_covered;
+	uintptr_t eh_segment;
 };
 
 static int callback(struct dl_phdr_info *info, size_t size, void *data)
@@ -34,6 +43,8 @@ static int callback(struct dl_phdr_info *info, size_t size, void *data)
 		uintptr_t start = info->dlpi_addr + ph->p_vaddr;
 		if (ph->p_type == PT_LOAD && code >= start && code - start < ph->p_memsz)
 			seen->code_covered = 1;
+		if (ph->p_type == PT_GNU_EH_FRAME)
+			seen->eh_segment = start;
 		if (ph->p_type == PT_TLS) {
 			uintptr_t block = (uintptr_t)info->dlpi_tls_data;
 			if (tls >= block && tls - block < ph->p_memsz)
@@ -68,6 +79,9 @@ int main(void)
 	CHECK((uintptr_t)found.dlfo_map_start <= code && code < (uintptr_t)found.dlfo_map_end);
 	CHECK(found.dlfo_flags == 0 && found.dlfo_link_map == 0);
 	CHECK(found.__dlfo_reserved[6] == 0x5a5a);
+	/* dlfo_eh_frame is the segment DLFO_EH_SEGMENT_TYPE names, or null
+	 * where the program has none. */
+	CHECK((uintptr_t)found.dlfo_eh_frame == seen.eh_segment);
 	/* The table is `.eh_frame_hdr`, version 1, inside the object, where
 	 * the program was linked with one; a static C program may have none. */
 	if (found.dlfo_eh_frame != 0) {
