@@ -88,7 +88,8 @@ step() { printf '\n== %s\n' "$*"; }
 step "sources"
 fetch_sources "$src"
 if [ -n "$target" ]; then
-    fetch "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/$alpine/$HEADERS" \
+    # Alpine's dl-cdn, then kernel.org's mirror of the same tree.
+    fetch "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/$alpine/$HEADERS https://mirrors.edge.kernel.org/alpine/v3.22/main/$alpine/$HEADERS" \
         "$src/${HEADERS%.apk}-$alpine.apk" sha256sum "$headers_sha256"
     echo "Alpine's $HEADERS for $alpine, verified"
 fi

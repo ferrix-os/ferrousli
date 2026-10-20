@@ -105,20 +105,48 @@ run_built() {
     fi
 }
 
-fetch() { # url file checksum-command checksum
-    local url=$1 file=$2 tool=$3 sum=$4
-    if [ ! -f "$file" ]; then
-        curl -fsSL --max-time 900 -o "$file.part" "$url"
-        mv "$file.part" "$file"
+# A pinned download, kept once it matches. Its URLs, upstream first and then
+# any mirrors, are tried in turn until one gives the pinned bytes: a download
+# that differs is thrown away and the next URL tried, and a kept file that
+# differs is refused, so a mirror can never change what is built. A mirror is
+# named where an upstream turns some machines away -- GitHub's Actions
+# runners, which a release is built on, among them (tools/busybox/sources.sh).
+fetch() { # "url [mirror ...]" file checksum-command checksum
+    local urls=$1 file=$2 tool=$3 sum=$4 url got
+    if [ -f "$file" ]; then
+        got=$("$tool" "$file" | cut -d' ' -f1)
+        if [ "$got" != "$sum" ]; then
+            echo "${0##*/}: $file does not match its pinned $tool" >&2
+            echo "  expected $sum" >&2
+            echo "  got      $got" >&2
+            exit 1
+        fi
+        return
     fi
-    local got
-    got=$("$tool" "$file" | cut -d' ' -f1)
-    if [ "$got" != "$sum" ]; then
-        echo "${0##*/}: $file does not match its pinned $tool" >&2
+    for url in $urls; do
+        rm -f "$file.part"
+        if ! curl -fsSL --max-time 900 -o "$file.part" "$url"; then
+            echo "${0##*/}: $url did not answer; trying the next source" >&2
+            continue
+        fi
+        got=$("$tool" "$file.part" | cut -d' ' -f1)
+        if [ "$got" = "$sum" ]; then
+            mv "$file.part" "$file"
+            return
+        fi
+        echo "${0##*/}: $url gave a ${file##*/} that does not match its pinned $tool" >&2
         echo "  expected $sum" >&2
         echo "  got      $got" >&2
-        exit 1
-    fi
+    done
+    rm -f "$file.part"
+    echo "${0##*/}: no source gave ${file##*/} with its pinned $tool: $urls" >&2
+    exit 1
+}
+
+# Alpine's dl-cdn, and kernel.org's mirror of the same tree, for the pinned
+# linux-headers package.
+alpine_urls() { # path under alpine/v3.22/
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.22/$1 https://mirrors.edge.kernel.org/alpine/v3.22/$1"
 }
 
 # LLVM's prebuilt release for x86-64 Linux, pinned by its sha256 as first
@@ -301,8 +329,7 @@ make_compilers() {
     else
         local apk=$ports/src/${HEADERS%.apk}-$alpine.apk headers=$builds/linux-headers
         mkdir -p "$ports/src"
-        fetch "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/$alpine/$HEADERS" \
-            "$apk" sha256sum "$headers_sha256"
+        fetch "$(alpine_urls "main/$alpine/$HEADERS")" "$apk" sha256sum "$headers_sha256"
         rm -rf "$headers"
         mkdir -p "$headers"
         tar --warning=no-unknown-keyword -xzf "$apk" -C "$headers" usr/include

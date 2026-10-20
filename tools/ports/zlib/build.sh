@@ -19,6 +19,8 @@ lock_port zlib
 ZLIB_VERSION=1.3.2
 ZLIB_TARBALL=zlib-$ZLIB_VERSION.tar.gz
 ZLIB_URL=https://zlib.net/$ZLIB_TARBALL
+# zlib.net keeps only its newest release; zlib's GitHub releases keep each.
+ZLIB_MIRROR=https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/$ZLIB_TARBALL
 ZLIB_SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
 
 work=$builds/zlib
@@ -26,7 +28,7 @@ src=$ports/src
 
 step "sources"
 mkdir -p "$src" "$work"
-fetch "$ZLIB_URL" "$src/$ZLIB_TARBALL" sha256sum "$ZLIB_SHA256"
+fetch "$ZLIB_URL $ZLIB_MIRROR" "$src/$ZLIB_TARBALL" sha256sum "$ZLIB_SHA256"
 echo "zlib $ZLIB_VERSION, verified"
 
 build_ferrousli

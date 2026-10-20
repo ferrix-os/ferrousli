@@ -30,6 +30,7 @@ set -euo pipefail
 
 HEADERS=linux-headers-6.14.2-r0.apk
 HEADERS_URL=https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/$HEADERS
+HEADERS_MIRROR=https://mirrors.edge.kernel.org/alpine/v3.22/main/x86_64/$HEADERS
 HEADERS_SHA256=b0d7184f0e8d926961b82dff3d8a6a1f85db100dfc97e3fa1e6a25bbe9fd0f71
 TARGET=x86_64-unknown-linux-gnu
 
@@ -87,7 +88,7 @@ echo "gmake: $(command -v gmake)"
 
 step "sources"
 fetch_sources "$src"
-fetch "$HEADERS_URL" "$src/$HEADERS" sha256sum "$HEADERS_SHA256"
+fetch "$HEADERS_URL $HEADERS_MIRROR" "$src/$HEADERS" sha256sum "$HEADERS_SHA256"
 echo "Alpine's $HEADERS, verified"
 
 step "ferrousli, release, $TARGET"
