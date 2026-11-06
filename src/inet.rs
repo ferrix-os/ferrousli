@@ -311,7 +311,7 @@ fn ipv6_text(out: &mut [u8; 100], address: [u8; 16]) -> usize {
         == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff];
     let groups = if mapped { 6 } else { 8 };
     let mut len = 0;
-    for (index, pair) in address.chunks_exact(2).take(groups).enumerate() {
+    for (index, pair) in address.as_chunks::<2>().0.iter().take(groups).enumerate() {
         if index > 0 {
             put(out, &mut len, b':');
         }
@@ -504,10 +504,8 @@ pub(crate) fn pton6(text: &[u8]) -> Option<[u8; 16]> {
         groups = moved;
     }
     let mut address = [0u8; 16];
-    for (pair, group) in address.chunks_exact_mut(2).zip(groups) {
-        if let [high, low] = pair {
-            [*high, *low] = group.to_be_bytes();
-        }
+    for (pair, group) in address.as_chunks_mut::<2>().0.iter_mut().zip(groups) {
+        *pair = group.to_be_bytes();
     }
     if ipv4 {
         let [.., a, b, c, d] = &mut address;
@@ -715,10 +713,8 @@ mod tests {
 
     fn groups(groups: [u16; 8]) -> [u8; 16] {
         let mut address = [0u8; 16];
-        for (pair, group) in address.chunks_exact_mut(2).zip(groups) {
-            if let [high, low] = pair {
-                [*high, *low] = group.to_be_bytes();
-            }
+        for (pair, group) in address.as_chunks_mut::<2>().0.iter_mut().zip(groups) {
+            *pair = group.to_be_bytes();
         }
         address
     }

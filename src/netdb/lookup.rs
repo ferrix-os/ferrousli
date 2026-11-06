@@ -997,8 +997,8 @@ mod tests {
 
     fn v6(groups: [u16; 8]) -> [u8; 16] {
         let mut out = [0u8; 16];
-        for (pair, group) in out.chunks_exact_mut(2).zip(groups) {
-            pair.copy_from_slice(&group.to_be_bytes());
+        for (pair, group) in out.as_chunks_mut::<2>().0.iter_mut().zip(groups) {
+            *pair = group.to_be_bytes();
         }
         out
     }

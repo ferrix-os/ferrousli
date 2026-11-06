@@ -186,8 +186,8 @@ impl Sha for Sha256 {
         self.update(&bits.to_be_bytes());
 
         let mut digest = [0u8; 32];
-        for (chunk, word) in digest.chunks_exact_mut(4).zip(self.h.iter()) {
-            chunk.copy_from_slice(&word.to_be_bytes());
+        for (chunk, word) in digest.as_chunks_mut::<4>().0.iter_mut().zip(self.h.iter()) {
+            *chunk = word.to_be_bytes();
         }
         digest
     }
@@ -196,8 +196,8 @@ impl Sha for Sha256 {
 /// Mixes one 64-byte block into `h`.
 fn process256(h: &mut [u32; 8], block: &[u8]) {
     let mut w = [0u32; 64];
-    for (word, chunk) in w.iter_mut().zip(block.chunks_exact(4)) {
-        *word = u32::from_be_bytes(chunk.try_into().unwrap_or([0; 4]));
+    for (word, chunk) in w.iter_mut().zip(block.as_chunks::<4>().0) {
+        *word = u32::from_be_bytes(*chunk);
     }
     for i in 16..64 {
         let at = |k: usize| w.get(k).copied().unwrap_or(0);
@@ -402,8 +402,8 @@ impl Sha for Sha512 {
         self.update(&bits.to_be_bytes());
 
         let mut digest = [0u8; 64];
-        for (chunk, word) in digest.chunks_exact_mut(8).zip(self.h.iter()) {
-            chunk.copy_from_slice(&word.to_be_bytes());
+        for (chunk, word) in digest.as_chunks_mut::<8>().0.iter_mut().zip(self.h.iter()) {
+            *chunk = word.to_be_bytes();
         }
         digest
     }
@@ -412,8 +412,8 @@ impl Sha for Sha512 {
 /// Mixes one 128-byte block into `h`.
 fn process512(h: &mut [u64; 8], block: &[u8]) {
     let mut w = [0u64; 80];
-    for (word, chunk) in w.iter_mut().zip(block.chunks_exact(8)) {
-        *word = u64::from_be_bytes(chunk.try_into().unwrap_or([0; 8]));
+    for (word, chunk) in w.iter_mut().zip(block.as_chunks::<8>().0) {
+        *word = u64::from_be_bytes(*chunk);
     }
     for i in 16..80 {
         let at = |k: usize| w.get(k).copied().unwrap_or(0);

@@ -45,8 +45,7 @@ pub extern "C" fn srand(seed: c_uint) {
 pub extern "C" fn rand() -> c_int {
     let step = |state: u64| state.wrapping_mul(LCG64).wrapping_add(1);
     // The closure always returns a value, so the update cannot fail.
-    let old = match RAND_STATE.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |s| Some(step(s)))
-    {
+    let old = match RAND_STATE.try_update(Ordering::Relaxed, Ordering::Relaxed, |s| Some(step(s))) {
         Ok(old) | Err(old) => old,
     };
     // 31 bits.

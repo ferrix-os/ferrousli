@@ -157,7 +157,9 @@ fn extent_covers_the_segments() {
 fn host_vdso() -> Option<usize> {
     let vector = std::fs::read("/proc/self/auxv").ok()?;
     vector
-        .chunks_exact(16)
+        .as_chunks::<16>()
+        .0
+        .iter()
         .map(|pair| {
             let key = usize::from_le_bytes(pair[..8].try_into().unwrap_or_default());
             let value = usize::from_le_bytes(pair[8..].try_into().unwrap_or_default());

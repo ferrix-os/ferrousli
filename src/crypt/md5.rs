@@ -156,8 +156,8 @@ impl Md5 {
         self.update(&bits.to_le_bytes());
 
         let mut digest = [0u8; 16];
-        for (chunk, word) in digest.chunks_exact_mut(4).zip(self.h.iter()) {
-            chunk.copy_from_slice(&word.to_le_bytes());
+        for (chunk, word) in digest.as_chunks_mut::<4>().0.iter_mut().zip(self.h.iter()) {
+            *chunk = word.to_le_bytes();
         }
         digest
     }
@@ -166,8 +166,8 @@ impl Md5 {
 /// Mixes one 64-byte block into `h`.
 fn process(h: &mut [u32; 4], block: &[u8]) {
     let mut words = [0u32; 16];
-    for (word, chunk) in words.iter_mut().zip(block.chunks_exact(4)) {
-        *word = u32::from_le_bytes(chunk.try_into().unwrap_or([0; 4]));
+    for (word, chunk) in words.iter_mut().zip(block.as_chunks::<4>().0) {
+        *word = u32::from_le_bytes(*chunk);
     }
 
     let [mut a, mut b, mut c, mut d] = *h;
