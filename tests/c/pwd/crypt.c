@@ -37,26 +37,37 @@ int main(void)
 
 	/* The $ hashes still come first. */
 	CHECK(is(crypt("", "$1$salt$"), "$1$salt$UsdFqFVB.FsuinRDK5eE.."));
-	CHECK(is(crypt("password", "$2a$04$abcdefghijklmnopqrstuv"), "*"));
+	CHECK(is(crypt("password", "$2a$04$abcdefghijklmnopqrstuv"), "*0"));
 
 	/* A $ setting naming no hash is a DES salt, as musl reads it. */
 	const char *dollar = crypt("password", "$9$salt$");
 	CHECK(dollar && strlen(dollar) == 13 && strncmp(dollar, "$9", 2) == 0);
 
-	/* Refusals: "*", or "x" for a setting that is itself "*", so that a
-	 * locked entry never matches its own hash. */
-	CHECK(is(crypt("password", ""), "*"));
-	CHECK(is(crypt("password", "a"), "*"));
-	CHECK(is(crypt("password", "a:"), "*"));
-	CHECK(is(crypt("password", "_...."), "*"));
-	CHECK(is(crypt("password", "_....abcd"), "*"));
-	CHECK(is(crypt("password", "*"), "x"));
+	/* Refusals: libxcrypt's "*0", or "*1" for a refused setting beginning
+	 * "*0", so that a refusal never equals a locked entry or its setting. */
+	CHECK(is(crypt("password", ""), "*0"));
+	CHECK(is(crypt("password", "a"), "*0"));
+	CHECK(is(crypt("password", "a:"), "*0"));
+	CHECK(is(crypt("password", "_...."), "*0"));
+	CHECK(is(crypt("password", "_....abcd"), "*0"));
+	CHECK(is(crypt("password", "*"), "*0"));
+	/* "*0" itself is a DES salt, so it hashes rather than being refused. */
+	const char *star0 = crypt("password", "*0");
+	CHECK(star0 && strlen(star0) == 13);
 
 	struct crypt_data data;
 	memset(&data, 0, sizeof data);
 	CHECK(is(crypt_r("password", "ab", &data), "abJnggxhB/yWI"));
 	CHECK(is(crypt_r("test", "_J9..CCCC", &data), "_J9..CCCCZBIc.TMGpK."));
-	CHECK(is(crypt_r("password", "*", &data), "x"));
+	CHECK(is(crypt_r("password", "*", &data), "*0"));
+
+	/* A key past the SHA-crypt limit, hashed under another account's salt
+	 * as OpenSSH does for a locked account, never equals "*" (sshhole). */
+	char long_key[258];
+	memset(long_key, 'A', 257);
+	long_key[257] = 0;
+	CHECK(is(crypt(long_key, "$6$saltsalt$"), "*0"));
+	CHECK(is(crypt(long_key, "$5$saltsalt$"), "*0"));
 
 	return t_status;
 }

@@ -7,7 +7,7 @@
 //! | Setting | Hash |
 //! |---|---|
 //! | `$1$salt$` | MD5, in [`md5`] |
-//! | `$2?$…` | blowfish, which is not here and gives `"*"` |
+//! | `$2?$…` | blowfish, which is not here and is refused |
 //! | `$5$[rounds=n$]salt$` | SHA-256, in [`sha2`] |
 //! | `$6$[rounds=n$]salt$` | SHA-512, in [`sha2`] |
 //! | `_`, 4 characters of count, 4 of salt | BSDi's extended DES, in [`des`] |
@@ -15,16 +15,16 @@
 //!
 //! Like musl's, a setting beginning with `$` that names none of these hashes
 //! is not refused but read as a DES salt: `$9$salt$` hashes under the salt
-//! `$9`. A blowfish setting gives `"*"`, which matches no password, rather
+//! `$9`. A blowfish setting is refused, which matches no password, rather
 //! than a hash from the wrong algorithm, so a blowfish entry in `/etc/shadow`
 //! refuses the login rather than accepting it.
 //!
 //! The result is written into storage the caller can read until the next call:
 //! a static buffer for `crypt`, and the caller's `struct crypt_data` for
-//! `crypt_r`. Neither ever fails with a null pointer. A setting that cannot be
-//! used gives `"*"`, or `"x"` if the setting itself begins with `*`, as musl
-//! does: a locked entry of `*` then never equals the hash of any password
-//! under it.
+//! `crypt_r`. Neither ever fails with a null pointer. A setting or key that
+//! cannot be used gives libxcrypt's failure token, `"*0"`, or `"*1"` if the
+//! setting itself begins with `*0`, rather than musl's `"*"`: see [`refuse`]
+//! for why. Either begins with `*`, which no hash does.
 
 pub(crate) mod des;
 pub(crate) mod md5;
@@ -169,13 +169,21 @@ fn hash(key: &[u8], setting: &[u8], out: &mut [u8]) -> Option<usize> {
     }
 }
 
-/// Writes the refusal that matches no password: `"*"`, or `"x"` when the
-/// setting begins with `*`, so that it cannot match the setting either.
+/// Writes the refusal that matches no password: libxcrypt's `"*0"`, or `"*1"`
+/// when the setting begins with `*0`, so that it cannot match the setting
+/// either.
+///
+/// musl's `"*"` is not kept, because a refusal must not equal a locked entry
+/// even when the setting is not that entry. Without PAM, OpenSSH hashes a
+/// password for an account locked with `*` under the salt of another
+/// account; a key longer than [`sha2`]'s limit is then refused, and musl's
+/// `"*"` equals the locked entry, so any such password logs in ("sshhole",
+/// 2026-11-05). No shadow file locks an account with `*0`.
 fn refuse(setting: &[u8], out: &mut [u8]) {
-    let refusal = if setting.first() == Some(&b'*') {
-        b"x"
+    let refusal = if setting.starts_with(b"*0") {
+        b"*1"
     } else {
-        b"*"
+        b"*0"
     };
     let mut writer = Writer::new(out);
     if writer.push(refusal).is_some() {
@@ -330,9 +338,9 @@ mod tests {
 
     #[test]
     fn blowfish_refuses_rather_than_guesses() {
-        assert_eq!(hashed(b"password", b"$2a$10$abcdefghijklmnopqrstuv"), "*");
-        assert_eq!(hashed(b"password", b"$2y$04$abcdefghijklmnopqrstuv"), "*");
-        assert_eq!(hashed(b"password", b"$2$$"), "*");
+        assert_eq!(hashed(b"password", b"$2a$10$abcdefghijklmnopqrstuv"), "*0");
+        assert_eq!(hashed(b"password", b"$2y$04$abcdefghijklmnopqrstuv"), "*0");
+        assert_eq!(hashed(b"password", b"$2$$"), "*0");
     }
 
     #[test]
@@ -344,17 +352,38 @@ mod tests {
         assert_eq!(hashed(b"password", b"$9"), des);
         assert_eq!(hashed(b"password", b"$1").len(), 13);
         assert_eq!(hashed(b"password", b"$2ab").len(), 13);
-        assert_eq!(hashed(b"password", b"$"), "*");
+        assert_eq!(hashed(b"password", b"$"), "*0");
     }
 
     #[test]
     fn a_refusal_never_equals_its_setting() {
-        assert_eq!(hashed(b"password", b""), "*");
-        assert_eq!(hashed(b"password", b"a"), "*");
-        assert_eq!(hashed(b"password", b"*"), "x");
-        assert_eq!(hashed(b"", b"*"), "x");
-        // A refused `$` hash begins with `$`, so it gives `*`.
-        assert_eq!(hashed(b"password", b"$5$rounds=$"), "*");
+        assert_eq!(hashed(b"password", b""), "*0");
+        assert_eq!(hashed(b"password", b"a"), "*0");
+        assert_eq!(hashed(b"password", b"*"), "*0");
+        // DES reads any setting of two characters but `:` and newline, so a
+        // setting beginning `*0` hashes today; `refuse` still guards it.
+        assert_eq!(hashed(b"password", b"*0").len(), 13);
+        let mut out = [0u8; 3];
+        refuse(b"*0", &mut out);
+        assert_eq!(&out, b"*1\0");
+        // A refused `$` hash begins with `$`, so it gives `*0`.
+        assert_eq!(hashed(b"password", b"$5$rounds=$"), "*0");
+    }
+
+    #[test]
+    fn a_key_too_long_to_hash_never_matches_a_locked_entry() {
+        // sshhole: OpenSSH hashes the password for a `*` account under
+        // another account's salt and compares the result with `*`.
+        let long = [b'A'; 257];
+        for setting in [&b"$5$salt$"[..], b"$6$salt$", b"$6$rounds=1000$abcdefgh$"] {
+            let refused = hashed(&long, setting);
+            assert_eq!(refused, "*0");
+            for locked in ["*", "!", "!*", "x", "*LK*", ""] {
+                assert_ne!(refused, locked);
+            }
+        }
+        // 256 bytes is still a key.
+        assert!(hashed(&[b'A'; 256], b"$6$salt$").starts_with("$6$salt$"));
     }
 
     #[test]
