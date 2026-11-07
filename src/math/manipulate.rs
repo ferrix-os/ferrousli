@@ -30,8 +30,8 @@ use core::ffi::{c_char, c_int, c_long};
 
 use crate::math::rounding::{rint, rintf};
 use crate::math::support::{
-    barrierf, force_eval, force_evalf, hexf32, hexf64, invalid, invalidf, is_finite, is_finitef,
-    is_nan, is_nanf,
+    barrier, barrierf, force_eval, force_evalf, hexf32, hexf64, invalid, invalidf, is_finite,
+    is_finitef, is_nan, is_nanf,
 };
 
 /// What `ilogb` returns for a NaN: `INT_MIN`.
@@ -312,7 +312,9 @@ pub extern "C" fn logb(x: f64) -> f64 {
         return x * x;
     }
     if x == 0.0 {
-        return -1.0 / (x * x);
+        // Through `barrier`: inside this branch LLVM knows `x * x` is 0 and
+        // folds the division to -inf, without FE_DIVBYZERO (rustc 1.99.1).
+        return -1.0 / barrier(x * x);
     }
     f64::from(ilogb(x))
 }
@@ -324,7 +326,9 @@ pub extern "C" fn logbf(x: f32) -> f32 {
         return x * x;
     }
     if x == 0.0 {
-        return -1.0 / (x * x);
+        // Through `barrierf`: inside this branch LLVM knows `x * x` is 0 and
+        // folds the division to -inf, without FE_DIVBYZERO (rustc 1.99.1).
+        return -1.0 / barrierf(x * x);
     }
     // Every exponent a float has is exact in a float.
     ilogbf(x) as f32

@@ -184,11 +184,13 @@ pub extern "C" fn jn(n: c_int, x: f64) -> f64 {
         }
         let z = j0(x);
         let w = j1(x);
-        if fabs(z) >= fabs(w) {
-            t * z / b
+        // Chosen, then divided once, as in `jnf`.
+        let (above, below) = if fabs(z) >= fabs(w) {
+            (t * z, b)
         } else {
-            t * w / a
-        }
+            (t * w, a)
+        };
+        above / below
     };
     if sign != 0 { -b } else { b }
 }
@@ -363,11 +365,15 @@ pub extern "C" fn jnf(n: c_int, x: f32) -> f32 {
         }
         let z = j0f(x);
         let w = j1f(x);
-        if fabsf(z) >= fabsf(w) {
-            t * z / b
+        // The operands are chosen and then divided once: with two divisions
+        // and a choice of result, LLVM runs both, and the one not taken can
+        // be 0/0 and raise FE_INVALID (seen with rustc 1.99.1).
+        let (above, below) = if fabsf(z) >= fabsf(w) {
+            (t * z, b)
         } else {
-            t * w / a
-        }
+            (t * w, a)
+        };
+        above / below
     };
     if sign != 0 { -b } else { b }
 }
